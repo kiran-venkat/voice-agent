@@ -9,7 +9,7 @@ import {
 } from "@livekit/components-react";
 import {
   fetchToken,
-  ROOM_NAME,
+  BACKEND_URL,
   MONITOR_TOPIC,
   decodeMonitorEvent,
   encodeControlMessage,
@@ -383,12 +383,24 @@ export default function MonitorPage() {
   const [lkUrl, setLkUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [watchedRoom, setWatchedRoom] = useState("");
 
   const connect = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await fetchToken("Watcher", "watcher", ROOM_NAME);
+      // Rooms are unique per call now, so discover the most recent ACTIVE call
+      // from the backend and watch that room.
+      const res = await fetch(`${BACKEND_URL}/api/calls`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const calls = (await res.json()) as { room_name: string; status: string }[];
+      const active = calls.find((c) => c.status === "active");
+      if (!active) {
+        setError("No active call to monitor right now. Start a call first, then monitor.");
+        return;
+      }
+      const result = await fetchToken("Watcher", "watcher", active.room_name);
+      setWatchedRoom(active.room_name);
       setToken(result.token);
       setLkUrl(result.livekitUrl);
     } catch {
@@ -405,7 +417,7 @@ export default function MonitorPage() {
           <header className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-xl font-bold text-gray-900">Monitoring Dashboard</h1>
-              <p className="text-sm text-gray-500">Room: {ROOM_NAME} · Watching live</p>
+              <p className="text-sm text-gray-500">Room: {watchedRoom} · Watching live</p>
             </div>
             <a href="/" className="text-sm text-gray-400 hover:text-gray-600 underline">
               ← Back to call

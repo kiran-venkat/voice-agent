@@ -134,7 +134,9 @@ export default function CallPage() {
     setLoading(true);
     setError("");
     try {
-      const result = await fetchToken(name.trim(), "caller", ROOM_NAME);
+      // Unique room per call so each call is its own CallSession (per-call history).
+      const roomName = `${ROOM_NAME}-${Date.now()}`;
+      const result = await fetchToken(name.trim(), "caller", roomName);
       setToken(result.token);
       setLkUrl(result.livekitUrl);
     } catch {

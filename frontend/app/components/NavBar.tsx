@@ -7,6 +7,7 @@ const LINKS: { href: string; label: string }[] = [
   { href: "/", label: "Make a Call" },
   { href: "/monitor", label: "Monitor" },
   { href: "/calls", label: "Call History" },
+  { href: "/bookings", label: "Bookings" },
 ];
 
 export default function NavBar() {
