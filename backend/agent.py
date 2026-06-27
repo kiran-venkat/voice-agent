@@ -218,7 +218,7 @@ class VoiceAgent(Agent):
     @function_tool
     async def request_human_transfer(
         self,
-        reason: Annotated[str, "Why the caller needs a human agent (billing/complaint/preference)"],
+        reason: Annotated[str, "SHORT noun phrase for why they need a human, e.g. 'a billing question' or 'a complaint' — not a full sentence"],
         caller_name: Annotated[str, "Caller's name if already collected, otherwise 'the caller'"],
     ) -> str:
         """Initiate a warm transfer to a human agent via Twilio."""
@@ -233,10 +233,10 @@ class VoiceAgent(Agent):
             "status": "transfer_initiated",
             "reason": reason,
             "caller_name": caller_name,
-            "message": (
-                "I'm sorry you've had trouble — let me connect you to a human agent "
-                "who can help. Please stay on the line, this will just take a moment."
-            ),
+            # Keep this SHORT — it may be cut off when the human answers and the
+            # handoff summary takes over. Say exactly this and nothing more.
+            "message": "Of course — connecting you to a human now. One moment please.",
+            "instruction": "Say the message verbatim. Do not add any other text.",
         })
 
     @function_tool
@@ -367,13 +367,14 @@ class VoiceAgent(Agent):
             await publish_event(self._room, "transfer_status", {"status": "accepted"})
             await publish_event(self._room, "call_status", {"status": "transferring"})
         # Speak a short handoff summary so the human has context as they join.
+        # Phrased so any reason value reads cleanly ("calling about <reason>").
         name = self._collected.get("name", "the caller")
-        reason = self._collected.get("transfer_reason", "an enquiry")
+        reason = self._collected.get("transfer_reason", "")
+        summary = f"Hi, connecting you with {name}"
+        summary += f", who's calling about {reason}." if reason else "."
+        summary += " I'll hand over to you now — go ahead."
         try:
-            await self.session.say(
-                f"Connecting you now. This is {name}, who needs help with {reason}. "
-                "I'll hand over to you — go ahead."
-            )
+            await self.session.say(summary)
         except RuntimeError:
             pass
         logger.info("Human agent joined room — AI paused, caller handed over")
