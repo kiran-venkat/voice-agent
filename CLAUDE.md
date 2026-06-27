@@ -12,7 +12,7 @@ transferred to a human agent via Twilio.
 | Layer      | Technology                                              |
 |------------|---------------------------------------------------------|
 | Agent      | Python 3.13 · **livekit-agents 1.6.4** · Deepgram STT/TTS |
-| LLM        | Groq **llama-3.1-8b-instant** (OpenAI-compatible API)   |
+| LLM        | **Claude (Anthropic) `claude-haiku-4-5`** via livekit-plugins-anthropic; Groq fallback |
 | VAD        | Silero VAD (bundled — explicit `silero` plugin deprecated) |
 | API        | FastAPI + uvicorn                                       |
 | Database   | PostgreSQL (asyncpg) + SQLAlchemy async                 |
@@ -63,10 +63,17 @@ voice-agent/
 `room.local_participant.publish_data()`. The frontend subscribes with
 `useDataChannel`. No separate WebSocket needed — LiveKit is the transport.
 
-### Groq via OpenAI-compatible base URL
-`livekit-plugins-openai` supports any OpenAI-compatible endpoint. Groq's
-`https://api.groq.com/openai/v1` is used with `GROQ_API_KEY`. Falls back to
-`OPENAI_API_KEY` if Groq is not configured.
+### LLM: Claude (Anthropic) preferred, Groq fallback
+The agent uses **Claude via `livekit-plugins-anthropic`** when `ANTHROPIC_API_KEY`
+is set (`anthropic.LLM(model=ANTHROPIC_MODEL)`, default `claude-haiku-4-5`).
+`settings.use_anthropic` gates this in `agent.py`'s entrypoint. Claude was adopted
+because Groq's llama models were unreliable at tool-calling — `llama-3.1-8b-instant`
+emitted fake `<function=...>` text and invented confirmation numbers, and even 70B
+hit the 12k TPM cap. Haiku 4.5 gives reliable structured tool calls + low latency
+(verified: `stop_reason: tool_use` with correct args). When no Anthropic key is set,
+it falls back to the Groq/OpenAI-compatible path (`llm_model` / `llm_base_url` /
+`GROQ_API_KEY`→`OPENAI_API_KEY`). Haiku 4.5 has no thinking/effort params — none are
+passed (and none are needed for voice).
 
 ### Takeover via data channel signals
 Watcher sends `{"type":"TAKEOVER_REQUEST"}` to room. Agent receives it via
@@ -316,16 +323,12 @@ human hangs up, the AI resumes (`handle_human_left`).
 
 ## Known issues & next steps
 
-- **Model choice (tool-calling reliability vs rate limits):** use
-  **`llama-3.3-70b-versatile`** for the voice agent. `llama-3.1-8b-instant` is
-  fast but **unreliable at tool-calling** — it emits the call as literal text
-  (`<function=book_appointment>{…}`) instead of a real tool_call and then
-  **fabricates results** (e.g. a fake "ABC123" confirmation while nothing is
-  saved to the DB). It also mis-reasons about dates. The 70B model fixes this.
-  Trade-off: 70B has a **12,000 TPM** free-tier cap → `APIConnectionError`/429
-  under heavy back-to-back load (single real calls are usually fine). To reduce
-  429s: trim the system prompt, or upgrade the Groq tier. Most reliable option
-  is routing the agent's LLM through the llm-gateway to Claude.
+- **LLM:** now defaults to **Claude `claude-haiku-4-5`** (Anthropic), which does
+  reliable tool-calling at low latency — set `ANTHROPIC_API_KEY`. The Groq path is
+  a fallback only: `llama-3.1-8b-instant` **fakes** tool calls (emits `<function=…>`
+  text + invented confirmations, nothing saved) and mis-reasons dates;
+  `llama-3.3-70b-versatile` is better but hits the 12k TPM free-tier cap (429). Use
+  Claude unless you specifically need the Groq fallback.
 - **`top`-of-call latency:** logs show occasional `inference is slower than realtime`
   and `eou detection ran after ... flushed` — acceptable on free tiers; raise
   `min_delay` endpointing if STT finals lag.

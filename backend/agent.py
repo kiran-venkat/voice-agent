@@ -32,7 +32,7 @@ from livekit.agents import (
 )
 from livekit.agents import metrics as lk_metrics
 from livekit.agents.llm import function_tool
-from livekit.plugins import deepgram, openai as lk_openai, silero
+from livekit.plugins import anthropic, deepgram, openai as lk_openai, silero
 from livekit.plugins.turn_detector.english import EnglishModel
 
 from sqlalchemy import select
@@ -524,15 +524,26 @@ async def entrypoint(ctx: JobContext) -> None:
     agent = VoiceAgent()
     agent.set_room(ctx.room)
 
+    # LLM: prefer Claude (Anthropic) when configured — reliable tool-calling and
+    # low latency on Haiku, which the booking/reschedule/cancel/lookup tools need.
+    # Falls back to the Groq/OpenAI-compatible path when no Anthropic key is set.
+    if settings.use_anthropic:
+        llm = anthropic.LLM(
+            model=settings.anthropic_model,
+            api_key=settings.anthropic_api_key,
+        )
+    else:
+        llm = lk_openai.LLM(
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+        )
+
     # Build the speech pipeline
     session = AgentSession(
         vad=silero.VAD.load(),
         stt=deepgram.STT(model=settings.deepgram_stt_model),
-        llm=lk_openai.LLM(
-            model=settings.llm_model,
-            base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
-        ),
+        llm=llm,
         tts=deepgram.TTS(model=settings.deepgram_tts_voice),
         # Semantic end-of-turn detection (ONNX transformer) on top of Silero VAD:
         # VAD detects silence; this model reads the transcript to decide if the

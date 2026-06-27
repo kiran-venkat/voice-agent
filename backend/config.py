@@ -24,10 +24,19 @@ class Settings(BaseSettings):
     livekit_sip_trunk_id: str = ""
 
     # LLM
+    # Anthropic (Claude) is preferred when ANTHROPIC_API_KEY is set — reliable
+    # tool-calling and low latency on Haiku. Falls back to Groq/OpenAI otherwise.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-4-5"
     groq_api_key: str = ""
     openai_api_key: str = ""
     llm_model: str = "llama-3.3-70b-versatile"
     llm_base_url: str = "https://api.groq.com/openai/v1"
+
+    @property
+    def use_anthropic(self) -> bool:
+        """True when a Claude (Anthropic) key is configured — preferred LLM path."""
+        return bool(self.anthropic_api_key)
 
     # Deepgram — this project's key only has aura-1 access (aura-2 → 403)
     deepgram_api_key: str

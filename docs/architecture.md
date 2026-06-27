@@ -10,7 +10,7 @@
 │   │  Caller  │◄────────────────►│  Voice Agent (Agent A)           │    │
 │   │ (Browser │                  │  ┌─────────────────────────────┐ │    │
 │   │  or SIP) │                  │  │ STT: Deepgram Nova-2        │ │    │
-│   └──────────┘                  │  │ LLM: Groq llama-3.3-70b     │ │    │
+│   └──────────┘                  │  │ LLM: Claude Haiku 4.5       │ │    │
 │                                  │  │ TTS: Deepgram Aura (asteria)│ │    │
 │   ┌──────────┐  data channel    │  │ VAD: Silero + turn detector │ │    │
 │   │  Monitor │◄─────────────────│  └─────────────────────────────┘ │    │
@@ -45,7 +45,7 @@ concurrent rooms. Each call room gets one `VoiceAgent` instance.
 
 Pipeline per utterance:
 ```
-Microphone audio → VAD (Silero) → STT (Deepgram) → LLM (Groq)
+Microphone audio → VAD (Silero) → STT (Deepgram) → LLM (Claude Haiku 4.5)
                                                        ↓
                                               Tool calls (if any)
                                                        ↓

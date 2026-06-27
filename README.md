@@ -36,7 +36,7 @@ Twilio when the caller needs one.
 │   ┌──────────┐   WebRTC audio   ┌──────────────────────────────────┐     │
 │   │  Caller  │◄────────────────►│   Voice Agent (Agent A) — Python  │     │
 │   │ (browser)│                  │   STT  Deepgram Nova-2            │     │
-│   │  or SIP  │                  │   LLM  Groq llama-3.3-70b        │     │
+│   │  or SIP  │                  │   LLM  Claude Haiku 4.5          │     │
 │   └──────────┘                  │   TTS  Deepgram Aura (asteria)   │     │
 │   ┌──────────┐  data channel    │   VAD  Silero + turn detector    │     │
 │   │ Watcher  │◄─────────────────│                                  │     │
@@ -77,7 +77,8 @@ See [docs/architecture.md](docs/architecture.md) for detailed data-flow diagrams
 | Docker            | For PostgreSQL (and optional full-stack compose)           |
 | LiveKit account   | https://cloud.livekit.io — URL + API key/secret            |
 | Deepgram account  | https://console.deepgram.com — STT + TTS API key           |
-| Groq account      | https://console.groq.com — LLM API key (free, fastest)     |
+| Anthropic account | https://console.anthropic.com — Claude key (preferred LLM) |
+| Groq account      | https://console.groq.com — LLM API key (optional fallback) |
 | Twilio account    | https://console.twilio.com — for warm transfer (free trial)|
 
 > OpenAI is optional — it's the LLM fallback if `GROQ_API_KEY` is unset.
@@ -169,7 +170,7 @@ Serves on **http://localhost:3001** (port 3000 is reserved for Docker — see no
 ### a. Booking conversation
 
 1. Caller joins the LiveKit room from `/`; the agent greets them.
-2. Audio flows **VAD (Silero) → STT (Deepgram) → LLM (Groq) → TTS (Deepgram)**.
+2. Audio flows **VAD (Silero) → STT (Deepgram) → LLM (Claude Haiku 4.5) → TTS (Deepgram)**.
 3. The LLM collects the five required fields one at a time: name, reason, date,
    time slot, phone.
 4. The LLM calls **`check_availability(date, time_slot)`** — a tool that queries the
@@ -230,7 +231,9 @@ new_time)`** moves one (re-checking the new slot is free), and
 | `LIVEKIT_URL`               | LiveKit server WebSocket URL (`wss://…`)               | LiveKit Cloud → Project → Settings           |
 | `LIVEKIT_API_KEY`           | LiveKit API key                                        | LiveKit Cloud → Settings → API Keys          |
 | `LIVEKIT_API_SECRET`        | LiveKit API secret                                     | LiveKit Cloud → Settings → API Keys          |
-| `GROQ_API_KEY`              | Groq LLM key (primary — fastest free tier)             | https://console.groq.com/keys                |
+| `ANTHROPIC_API_KEY`         | **Claude key — preferred LLM** (reliable tool-calling, low latency) | https://console.anthropic.com/settings/keys |
+| `ANTHROPIC_MODEL`           | Claude model (default `claude-haiku-4-5`)              | —                                            |
+| `GROQ_API_KEY`              | Groq LLM key (fallback if `ANTHROPIC_API_KEY` unset)   | https://console.groq.com/keys                |
 | `OPENAI_API_KEY`            | OpenAI key (fallback if Groq unset)                    | https://platform.openai.com/api-keys         |
 | `LLM_MODEL`                 | Model name (default `llama-3.3-70b-versatile` — reliable tool-calling) | —                            |
 | `LLM_BASE_URL`              | OpenAI-compatible base URL (Groq's by default)         | —                                            |
