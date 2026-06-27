@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   LiveKitRoom,
-  RoomAudioRenderer,
+  // RoomAudioRenderer,  // disabled — monitor is visual-only (see render below)
   useDataChannel,
   useLocalParticipant,
 } from "@livekit/components-react";
@@ -199,7 +199,12 @@ function MonitorDashboard() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <RoomAudioRenderer />
+      {/* Monitor is VISUAL-ONLY (watch the live transcript). RoomAudioRenderer is
+          disabled so the monitor tab doesn't replay the call through the speakers
+          — on one laptop that fed back into the caller tab's mic (echo + broken
+          STT). Re-enable (and use headphones / a 2nd device) if you want the
+          watcher to hear the audio:
+          <RoomAudioRenderer /> */}
 
       {/* ── Left: live state ─────────────────────────────────────────────── */}
       <div className="lg:col-span-1 flex flex-col gap-4">
