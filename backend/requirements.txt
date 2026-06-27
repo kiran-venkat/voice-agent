@@ -1,0 +1,32 @@
+# ── LiveKit ───────────────────────────────────────────────────────────────────
+livekit-agents>=0.11.0,<1.0.0
+livekit-plugins-deepgram>=0.7.0
+livekit-plugins-openai>=0.10.0       # also used for Groq (OpenAI-compatible)
+livekit-plugins-silero>=0.7.0
+livekit-api>=0.7.0                   # server-side token generation
+
+# ── API ───────────────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9              # form data for webhook
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# ── Config / validation ───────────────────────────────────────────────────────
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.1
+
+# ── Twilio ────────────────────────────────────────────────────────────────────
+twilio>=9.2.0
+
+# ── HTTP client ───────────────────────────────────────────────────────────────
+httpx>=0.27.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dateutil>=2.9.0
+pytz>=2024.1
+livekit-plugins-turn-detector
