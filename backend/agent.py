@@ -48,7 +48,10 @@ from services.monitoring import (
 from services.transfer import HUMAN_AGENT_IDENTITY, initiate_transfer
 from tools.appointment import (
     book_appointment_impl,
+    cancel_appointment_impl,
     check_availability_impl,
+    lookup_appointment_impl,
+    reschedule_appointment_impl,
 )
 
 logging.basicConfig(level=getattr(logging, settings.log_level))
@@ -70,6 +73,14 @@ to a human agent.
 - Collect all five fields above before calling check_availability.
 - After confirming availability, call book_appointment to confirm.
 - Read the confirmation number back to the caller slowly and clearly.
+
+## Managing existing appointments
+- If the caller asks about existing appointments, ask for their phone number
+  and call lookup_appointment, then read back their upcoming appointments.
+- If the caller wants to reschedule, ask for their confirmation number, then
+  their new date and time preference, and call reschedule_appointment.
+- If the caller wants to cancel, ask for their confirmation number and confirm
+  with them before calling cancel_appointment.
 
 ## When to transfer
 Transfer when the caller:
@@ -181,6 +192,35 @@ class VoiceAgent(Agent):
             "caller_name": caller_name,
             "message": "I'm connecting you to a specialist now. Please hold for just a moment.",
         })
+
+    @function_tool
+    async def lookup_appointment(
+        self,
+        phone: Annotated[str, "Caller's contact phone number to look up appointments for"],
+    ) -> str:
+        """Look up a caller's upcoming appointments by their phone number."""
+        appointments = await lookup_appointment_impl(phone)
+        return json.dumps({"appointments": appointments, "count": len(appointments)})
+
+    @function_tool
+    async def reschedule_appointment(
+        self,
+        confirmation_number: Annotated[str, "Existing appointment confirmation number, e.g. 'APT-AC39CA4E'"],
+        new_date: Annotated[str, "New appointment date in YYYY-MM-DD format"],
+        new_time: Annotated[str, "New time slot, e.g. '10:00 AM'"],
+    ) -> str:
+        """Reschedule an existing appointment to a new date and time."""
+        result = await reschedule_appointment_impl(confirmation_number, new_date, new_time)
+        return json.dumps(result)
+
+    @function_tool
+    async def cancel_appointment(
+        self,
+        confirmation_number: Annotated[str, "Existing appointment confirmation number, e.g. 'APT-AC39CA4E'"],
+    ) -> str:
+        """Cancel an existing appointment by its confirmation number."""
+        result = await cancel_appointment_impl(confirmation_number)
+        return json.dumps(result)
 
     async def on_enter(self) -> None:
         """Greet the caller and signal connected status to the dashboard."""

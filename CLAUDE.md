@@ -43,7 +43,7 @@ voice-agent/
 │   │   ├── models.py     ← SQLAlchemy models: Appointment, CallSession
 │   │   └── session.py    ← Async engine + session factory
 │   ├── tools/
-│   │   └── appointment.py ← check_availability_impl, book_appointment_impl
+│   │   └── appointment.py ← check_availability, book, reschedule, cancel, lookup impls
 │   └── services/
 │       ├── monitoring.py ← publish_event() — room data channel helper
 │       └── transfer.py   ← Twilio outbound call + TwiML warm transfer
@@ -75,6 +75,21 @@ Resume sends `{"type":"TAKEOVER_END"}`. No separate signalling server needed.
 ### Appointments stored in PostgreSQL, not a scheduler API
 `tools/appointment.py` queries the `appointments` table for availability and
 inserts confirmed bookings. Cal.com integration is a future upgrade path.
+
+### Agent tools (all `@function_tool` methods on `VoiceAgent`, auto-discovered)
+- `check_availability(date, time_slot)` — publishes `date`/`time_slot` booking_update.
+- `book_appointment(name, reason, date, time_slot, phone)` — publishes all 5 fields.
+- `reschedule_appointment(confirmation_number, new_date, new_time)` — re-checks slot.
+- `cancel_appointment(confirmation_number)` — sets `status='cancelled'` (idempotent).
+- `lookup_appointment(phone)` — upcoming (today+), non-cancelled appts by phone.
+- `request_human_transfer(reason, caller_name)` — fires the SIP/Twilio dial.
+
+Confirmation numbers (`APT-<8 hex>`) are **derived from the UUID, not stored** —
+`_find_by_confirmation()` resolves them via `cast(id, String) ILIKE 'prefix%'`.
+The agent collects appointment fields conversationally; only `check_availability`
+(date/time) and `book_appointment` (all fields) emit `booking_update` events, so
+the dashboard's "Collecting Info" panel shows name/reason/phone as ✅ at booking
+time and derives ⏳/⬜ for the rest. No per-field tool by design.
 
 ### Warm transfer: tool fires the dial directly; audio bridge needs LiveKit SIP
 The `request_human_transfer` tool fires the human dial **directly when the LLM
