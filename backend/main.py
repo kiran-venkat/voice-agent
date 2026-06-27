@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database.models import Appointment, CallSession
-from database.session import create_tables, get_db
+from database.session import AsyncSessionLocal, create_tables, get_db
 from services.transfer import (
     build_conference_twiml,
     build_decline_twiml,
@@ -175,7 +175,7 @@ async def livekit_webhook(request: Request) -> dict:
         participant.get("identity", ""),
     )
 
-    async with get_db() as db:
+    async with AsyncSessionLocal() as db:
         if event == "room_started" and room_name:
             existing = await db.execute(
                 select(CallSession).where(CallSession.room_name == room_name)
