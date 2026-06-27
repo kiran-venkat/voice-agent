@@ -337,8 +337,19 @@ class VoiceAgent(Agent):
             transfer_reason=reason,
         )
         # Both SIP and Twilio paths return {"status": "initiated"} on success.
+        # On the SIP path (wait_until_answered=True) a no-answer/declined call
+        # returns an error here — tell the caller the team isn't available and
+        # resume, rather than leaving them hanging after "connecting you".
         if result.get("status") != "initiated":
             await publish_event(self._room, "transfer_status", {"status": "error", **result})
+            self._paused = False
+            try:
+                await self.session.say(
+                    "I'm sorry, the team isn't available right now. "
+                    "Is there anything else I can help you with?"
+                )
+            except RuntimeError:
+                pass
 
     async def handle_human_joined(self) -> None:
         """A human agent joined the room over SIP — pause the AI and hand over.
@@ -355,6 +366,16 @@ class VoiceAgent(Agent):
         if self._room:
             await publish_event(self._room, "transfer_status", {"status": "accepted"})
             await publish_event(self._room, "call_status", {"status": "transferring"})
+        # Speak a short handoff summary so the human has context as they join.
+        name = self._collected.get("name", "the caller")
+        reason = self._collected.get("transfer_reason", "an enquiry")
+        try:
+            await self.session.say(
+                f"Connecting you now. This is {name}, who needs help with {reason}. "
+                "I'll hand over to you — go ahead."
+            )
+        except RuntimeError:
+            pass
         logger.info("Human agent joined room — AI paused, caller handed over")
 
     async def handle_human_left(self) -> None:
