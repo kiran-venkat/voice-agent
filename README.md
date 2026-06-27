@@ -1,55 +1,97 @@
-# Voice Agent — Conversational Booking with Live Monitoring & Warm Transfer
+# 🎙️ Voice Agent — Conversational Booking · Live Monitoring · Warm Transfer
 
-![CI](https://github.com/kiran-venkat/voice-agent/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/kiran-venkat/voice-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/kiran-venkat/voice-agent/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)
+![LiveKit](https://img.shields.io/badge/LiveKit-Agents%201.6-00C2FF)
+![Claude](https://img.shields.io/badge/LLM-Claude%20Haiku%204.5-D97757)
+![Deepgram](https://img.shields.io/badge/Speech-Deepgram-13EF93)
+![Twilio](https://img.shields.io/badge/Telephony-Twilio%20SIP-F22F46?logo=twilio&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL%20async-4169E1?logo=postgresql&logoColor=white)
 
-A real-time voice agent ("Alex") that books appointments over a natural phone-style
-conversation, streams the entire call to a live monitoring dashboard, lets a human
-watcher silently take over mid-call, and warm-transfers to a real human agent via
-Twilio when the caller needs one.
+A real-time **voice AI receptionist** ("Alex"). A caller talks to it over WebRTC; it **books
+appointments by voice** through LLM tool calls, a **live dashboard** streams the whole call to a
+human supervisor who can **take over**, and when the caller needs a person it does a **warm
+transfer to a real phone** with genuine two-way audio. Every call ends with an **LLM-generated
+summary**. Built on **LiveKit + Claude + Deepgram + Twilio**, backend in **Python**, frontend in
+**Next.js**.
 
 ## 🎥 Demo
 
-**[Watch the demo on Loom →](https://www.loom.com/share/b890f6ed4b2244839359e0a9c529a123)**
+**▶︎ [Watch the 5-minute walkthrough on Loom](https://www.loom.com/share/b890f6ed4b2244839359e0a9c529a123)**
 
-Covers: a booking conversation, the live monitoring dashboard updating in real time, a
-watcher taking over, the warm transfer (summary + accept/decline), and the post-call summary.
+Booking conversation → live monitoring → human take-over → warm transfer (summary + accept &
+decline) → post-call summary.
 
-## What it does
+---
 
-- **Books appointments by voice** — collects name, reason, date/time, and phone, checks
-  availability, and confirms the booking via LLM tool calls (stored in PostgreSQL).
-- **Manages existing appointments** — look up by phone, reschedule, or cancel, all by voice.
-- **Streams the call live** — a Next.js dashboard shows the running transcript, the
-  agent's state (listening / thinking / speaking), the detected intent, the action it's
-  taking, the booking data collected so far, and **per-turn pipeline latency**
-  (STT / LLM first-token / TTS first-byte) — all in real time over the LiveKit data channel.
-- **Lets a watcher take over** — one click pauses the agent and hands the conversation
-  to the human watcher, who speaks to the caller directly; another click hands it back.
-- **Warm-transfers to a human** — when the caller asks for "a person" or wants to escalate
-  a complaint/billing dispute, the agent dials a real human agent — into the call over
-  LiveKit SIP, or via a Twilio summary + accept/decline fallback — then bridges them in or
-  returns to the caller. (A routine "billing" *visit reason* does not trigger a transfer.)
-- **Generates a post-call summary** — when the call ends, the LLM produces a concise
-  recap (purpose, outcome, bookings, open issues), shown on the dashboard and persisted.
-- **Browse history & bookings** — a **Call History** page lists past calls with their
-  summaries, and a **Bookings** page lists every appointment; a top nav bar links all pages.
+## ✨ What makes this stand out
 
-## Architecture
+This isn't a "happy-path" prototype — it's engineered like a product, with the failure modes that
+actually bite real voice agents already handled:
+
+- 🎯 **Reliable tool-calling, not hallucinated bookings.** The agent's bookings are *real* DB
+  writes via structured tool calls. We benchmarked Groq/Llama and caught it **faking** tool calls
+  (emitting `<function=…>` as text and inventing confirmation numbers while nothing persisted) —
+  so the LLM runs on **Claude Haiku 4.5**, which emits proper `tool_use` calls at low latency.
+- 🗣️ **Natural turn-taking.** Silero VAD (acoustic) is paired with an **ONNX semantic
+  end-of-turn model** (`livekit-plugins-turn-detector`) so Alex doesn't cut you off mid-thought
+  when you pause.
+- 📊 **Real-time observability built in.** The dashboard streams **per-turn pipeline latency** —
+  STT delay, LLM time-to-first-token, TTS time-to-first-byte — so you can *see* the speech loop
+  performing live, not just read a transcript.
+- ☎️ **A *real* warm transfer.** Most demos drop the human into a Twilio conference the WebRTC
+  caller can't reach. Here the human is dialed **into the LiveKit room over SIP** — genuine
+  two-way audio — with a spoken handoff summary, and graceful **accept / decline** handling.
+- 🧱 **Truthful agent.** The prompt + tool contract guarantee Alex **never fabricates** a
+  confirmation: if a slot is taken or `book_appointment` fails, it says so and offers
+  alternatives — it only confirms with the exact number the tool returned.
+- 🧩 **Deterministic & isolated sessions.** Explicit agent dispatch + a **unique room per call**
+  mean the agent reliably joins, and every call is its own auditable session (own history row,
+  own summary) instead of all calls colliding in one shared room.
+- 🛟 **Graceful degradation.** LLM falls back Claude → Groq → OpenAI; warm transfer falls back
+  SIP bridge → Twilio REST IVR. Health checks, typed config, async DB throughout.
+- ➕ **Beyond the brief:** reschedule / cancel / look-up tools, a live "collecting info" panel,
+  a Bookings page, a Call History page with persisted summaries, and CI.
+
+---
+
+## 🗺️ Requirements coverage
+
+| Requirement | Status | Where |
+|---|:--:|---|
+| Caller ↔ agent via a LiveKit room | ✅ | `agent.py`, `app/page.tsx` |
+| Natural booking conversation (name, reason, date/time, phone) | ✅ | `SYSTEM_PROMPT`, tools |
+| **Checks availability** via tool/function call before confirming | ✅ | `check_availability` |
+| **Books** via tool call + reads back confirmation (stored in DB) | ✅ | `book_appointment` → PostgreSQL |
+| Live transcript | ✅ | `/monitor` |
+| Agent state (listening/thinking/speaking) + intent + current action | ✅ | data-channel events |
+| Call status (connected → transferring → ended) | ✅ | `/monitor` |
+| **Take over** from the UI (agent pauses) | ✅ | `TAKEOVER_REQUEST` / `_paused` |
+| **Warm transfer** — summary + accept (connect) + decline (unavailable) | ✅ | LiveKit SIP (`transfer.py`) |
+| **Post-call summary** | ✅ | `_generate_summary` → dashboard + DB |
+| Next.js UI: call + monitoring + take-over | ✅ | `frontend/` |
+| **Bonus** — reschedule / cancel / look-up | ✅ | `reschedule/cancel/lookup_appointment` |
+| **Bonus** — collected data shown live | ✅ | "Collecting Info" panel |
+| **Bonus** — semantic turn detection + per-turn latency | ✅ | turn-detector + `turn_metrics` |
+| **Bonus** — Call History & Bookings pages, CI | ✅ | `/calls`, `/bookings`, GitHub Actions |
+
+---
+
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                            LiveKit Cloud                                  │
-│                                                                           │
 │   ┌──────────┐   WebRTC audio   ┌──────────────────────────────────┐     │
 │   │  Caller  │◄────────────────►│   Voice Agent (Agent A) — Python  │     │
 │   │ (browser)│                  │   STT  Deepgram Nova-2            │     │
 │   │  or SIP  │                  │   LLM  Claude Haiku 4.5          │     │
 │   └──────────┘                  │   TTS  Deepgram Aura (asteria)   │     │
-│   ┌──────────┐  data channel    │   VAD  Silero + turn detector    │     │
-│   │ Watcher  │◄─────────────────│                                  │     │
-│   │(dashboard)│── TAKEOVER ────►│   tools: check_availability,     │     │
-│   └──────────┘                  │   book/reschedule/cancel/lookup, │     │
-│                                  │   request_human_transfer         │     │
+│   ┌──────────┐  data channel    │   VAD  Silero + ONNX turn model  │     │
+│   │ Watcher  │◄─────────────────│   tools: check_availability,     │     │
+│   │(dashboard)│── TAKEOVER ────►│   book/reschedule/cancel/lookup, │     │
+│   └──────────┘                  │   request_human_transfer         │     │
 │                                  └─────────────────┬────────────────┘     │
 └──────────────────────────────────────────────────│──────────────────────┘
                                                     │ tool calls / REST
@@ -57,259 +99,193 @@ watcher taking over, the warm transfer (summary + accept/decline), and the post-
                           │           FastAPI Backend (port 8000)          │
                           │  POST /api/token      issue LiveKit tokens     │
                           │  POST /api/webhook    LiveKit lifecycle hooks  │
-                          │  GET  /api/appointments                        │
+                          │  GET  /api/appointments · /api/calls           │
                           │  POST /api/twilio/*   TwiML for warm transfer  │
                           └──────────┬────────────────────────┬───────────┘
                                      │                         │
                           ┌──────────▼─────────┐     ┌─────────▼──────────┐
                           │  PostgreSQL        │     │  Twilio: SIP trunk │
-                          │  appointments      │     │  or REST → human   │
-                          │  call_sessions     │     │  agent's phone     │
+                          │  appointments      │     │  → human agent's   │
+                          │  call_sessions     │     │  phone (PSTN)      │
                           └────────────────────┘     └────────────────────┘
 
-      ┌──────────────────────────────────────────────────────────────┐
-      │  Next.js Frontend — / (caller) · /monitor (watcher) ·          │
-      │                     /calls (history) · /bookings (appointments)│
-      └──────────────────────────────────────────────────────────────┘
+   Next.js frontend — / (caller) · /monitor (watcher) · /calls (history) · /bookings
 ```
 
-See [docs/architecture.md](docs/architecture.md) for detailed data-flow diagrams.
+Detailed data-flow diagrams: [docs/architecture.md](docs/architecture.md). Engineering decision
+log & operational notes: [CLAUDE.md](CLAUDE.md). Demo recording script: [docs/demo-walkthrough.md](docs/demo-walkthrough.md).
 
-## Prerequisites
+---
 
-| Requirement       | Version / Notes                                            |
-|-------------------|------------------------------------------------------------|
-| Node.js           | 20+                                                        |
-| Python            | 3.11+                                                      |
-| Docker            | For PostgreSQL (and optional full-stack compose)           |
-| LiveKit account   | https://cloud.livekit.io — URL + API key/secret            |
-| Deepgram account  | https://console.deepgram.com — STT + TTS API key           |
-| Anthropic account | https://console.anthropic.com — Claude key (preferred LLM) |
-| Groq account      | https://console.groq.com — LLM API key (optional fallback) |
-| Twilio account    | https://console.twilio.com — for warm transfer (free trial)|
+## 🧠 Engineering decisions (the interesting bits)
 
-> OpenAI is optional — it's the LLM fallback if `GROQ_API_KEY` is unset.
+| Decision | Why |
+|---|---|
+| **Claude Haiku 4.5** as the LLM (via `livekit-plugins-anthropic`) | Llama on Groq faked tool calls and mis-reasoned dates; Haiku gives reliable structured tool-calling + low latency for voice. Falls back to Groq/OpenAI if no Anthropic key. |
+| **Semantic turn detection** on top of Silero VAD | VAD only hears silence; the ONNX model reads the transcript to decide if the caller actually finished — far fewer mid-sentence interruptions. |
+| **Explicit agent dispatch + unique room per call** | Auto-dispatch was flaky (callers stuck on "connecting"); a `RoomConfiguration` dispatch baked into each token + per-call room names make join deterministic and every call its own session. |
+| **Warm transfer over LiveKit SIP** (not a Twilio conference) | A Twilio conference can't bridge a WebRTC caller. Dialing the human *into the LiveKit room* gives true two-way audio; Twilio REST + IVR remains as a no-SIP fallback. |
+| **Tool-faithful prompt contract** | The agent must relay `available=false` / `success=false` and only confirm with the tool's real `confirmation_number` — eliminating "confirmed!" hallucinations. |
+| **Async tail for monitoring** | The agent never blocks the speech loop on bookkeeping — state/intent/latency events are published to the LiveKit data channel and rendered live. |
+| **Per-turn latency metrics** | Captured from the SDK's `metrics_collected` (LLM TTFT, TTS TTFB, STT/EOU delay) and surfaced on the dashboard for real observability. |
 
-## Setup
+---
 
-### a. Clone the repository
+## ⚡ Quickstart
 
-```bash
-git clone <your-repo-url> voice-agent
-cd voice-agent
-```
-
-### b. Configure environment variables
+**Prerequisites:** Node 20+, Python 3.11+, Docker (for Postgres), and accounts/keys for
+[LiveKit](https://cloud.livekit.io), [Deepgram](https://console.deepgram.com),
+[Anthropic](https://console.anthropic.com), and (for warm transfer) [Twilio](https://console.twilio.com).
 
 ```bash
-cp .env.example .env
-```
+# 1. Configure
+cp .env.example .env          # fill in your keys (see table below)
 
-Open `.env` and fill in your keys (see the [table below](#environment-variables) for
-where to get each one).
-
-### c. Start PostgreSQL
-
-```bash
+# 2. Database
 docker run -d --name voice-agent-db \
-  -e POSTGRES_USER=voice_agent \
-  -e POSTGRES_PASSWORD=voice_agent_dev \
-  -e POSTGRES_DB=voice_agent \
-  -p 5432:5432 \
-  postgres:16-alpine
+  -e POSTGRES_USER=voice_agent -e POSTGRES_PASSWORD=voice_agent_dev \
+  -e POSTGRES_DB=voice_agent -p 5432:5432 postgres:16-alpine
+#   (tables are created automatically on first backend start)
+
+# 3. Backend deps
+pip install -r backend/requirements.txt   # ideally in a venv
 ```
 
-The backend creates its tables automatically on first start.
-
-### d. Install backend dependencies
+Then run the **three processes** in separate terminals:
 
 ```bash
-pip install -r backend/requirements.txt
-```
-
-> Tip: use a virtualenv — `python -m venv .venv && source .venv/bin/activate` first.
-
-### e. Run the FastAPI server
-
-```bash
+# Terminal 1 — FastAPI (tokens + webhooks)        → http://localhost:8000  (GET /health)
 PYTHONPATH=backend python backend/main.py
-```
 
-Serves on **http://localhost:8000** (health check: `GET /health`).
-
-### f. Run the LiveKit agent worker
-
-In a **second terminal**:
-
-```bash
+# Terminal 2 — LiveKit agent worker               → waits for callers
 PYTHONPATH=backend python backend/agent.py start
+
+# Terminal 3 — Next.js frontend                   → http://localhost:3001
+cd frontend && npm install && npm run dev
 ```
 
-This connects to LiveKit and waits for callers to join a room.
+| URL | Role |
+|-----|------|
+| `http://localhost:3001` | **Caller** — join the call, talk to Alex |
+| `http://localhost:3001/monitor` | **Watcher** — live transcript, state, take-over |
+| `http://localhost:3001/calls` | **Call History** — past calls + summaries |
+| `http://localhost:3001/bookings` | **Bookings** — all appointments |
 
-### g. Install frontend dependencies
+> **Port note:** dev uses **3001** because `docker-compose` maps the frontend to host **3000**.
+> Or run the whole stack with `docker compose up --build` and use **3000**.
+
+> **First run only:** download the turn-detector weights once with
+> `PYTHONPATH=backend python backend/agent.py download-files`.
+
+---
+
+## 🔁 How each flow works
+
+### Booking
+1. Caller joins the LiveKit room from `/`; Alex greets them.
+2. Audio flows **Silero VAD → Deepgram STT → Claude → Deepgram TTS**, with the ONNX turn model
+   deciding when the caller is really done.
+3. Alex collects the 5 fields one at a time, calls **`check_availability`** (returns alternatives
+   if the slot's taken), then **`book_appointment`** (inserts the row, returns `APT-XXXXXXXX`),
+   and reads the confirmation back — digit by digit.
+4. Existing appointments: **`lookup_appointment(phone)`**, **`reschedule_appointment(...)`**
+   (re-checks the slot), **`cancel_appointment(...)`** (idempotent).
+
+### Live monitoring + take-over
+1. Each call uses a **unique room**; the watcher opens `/monitor` → **Start Monitoring**, which
+   finds the active call via `GET /api/calls` and joins it (subscribe-only).
+2. The agent publishes typed events on the data channel (`transcript`, `agent_state`, `intent`,
+   `booking_update`, `call_status`, `transfer_status`, `turn_metrics`) — rendered live.
+3. **Take Over** sends `TAKEOVER_REQUEST`; the agent pauses (interrupts its speech, stops
+   replying). **Release Control** resumes it.
+
+> ℹ️ The monitor is **visual-only by default** (audio playback disabled) so it can run beside the
+> caller on one machine without echo. The watcher→caller **audio bridge is implemented** but
+> commented off for that reason — re-enable it (and use headphones / a 2nd device) by uncommenting
+> the `RoomAudioRenderer` + `setMicrophoneEnabled` lines in `app/monitor/page.tsx`.
+
+### Warm transfer
+1. Caller asks for a person → Alex calls **`request_human_transfer`** → `transfer_status: initiated`.
+2. **LiveKit SIP (primary, real audio):** `dial_human_into_room()` dials the human's phone **into
+   the room**. On **answer**, Alex speaks a handoff summary and goes silent → caller & human talk
+   two-way (`accepted` / `transferring`). On **reject/no-answer**, Alex tells the caller *"the team
+   isn't available right now"* and resumes.
+3. **Twilio REST (fallback, no SIP trunk):** dials via REST + TwiML, plays a spoken summary, and
+   offers **press 1 to accept / 2 to decline** (rings the human but doesn't bridge WebRTC audio).
+
+> Set up the SIP trunk with `backend/scripts/setup_sip_trunk.py`. Full setup + Twilio-trial
+> gotchas are in [CLAUDE.md](CLAUDE.md) → "Twilio + warm transfer".
+
+### Post-call summary
+When the call ends, the agent generates an LLM recap (purpose, outcome, bookings, open issues),
+shows it on the dashboard, and **persists** it — visible on the **Call History** page.
+
+---
+
+## ⚙️ Environment variables
+
+| Variable | Description | Where to get it |
+|---|---|---|
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | LiveKit Cloud creds | LiveKit Cloud → Settings |
+| `ANTHROPIC_API_KEY` | **Claude key — preferred LLM** | console.anthropic.com |
+| `ANTHROPIC_MODEL` | Claude model (default `claude-haiku-4-5`) | — |
+| `GROQ_API_KEY` / `OPENAI_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | LLM fallback (used only if no Anthropic key) | console.groq.com |
+| `DEEPGRAM_API_KEY` | STT + TTS | console.deepgram.com |
+| `DEEPGRAM_STT_MODEL` / `DEEPGRAM_TTS_VOICE` | defaults `nova-2` / `aura-asteria-en` | — |
+| `DATABASE_URL` | Async Postgres DSN (`postgresql+asyncpg://…`) | matches the `docker run` above |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | Twilio creds | console.twilio.com |
+| `TWILIO_PHONE_NUMBER` / `TWILIO_HUMAN_AGENT_NUMBER` | dial-from / dial-to (E.164) | Twilio / your phone |
+| `LIVEKIT_SIP_TRUNK_ID` | outbound SIP trunk (enables the real audio bridge) | `scripts/setup_sip_trunk.py` |
+| `TWILIO_SIP_TERMINATION_URI` / `TWILIO_SIP_USERNAME` / `TWILIO_SIP_PASSWORD` | Twilio Elastic SIP Trunk | Twilio → Elastic SIP Trunking |
+| `PUBLIC_BASE_URL` | public URL for Twilio webhooks (ngrok in dev) | ngrok |
+| `APP_ENV` / `PORT` / `LOG_LEVEL` | app config | — |
+
+---
+
+## 🧪 Tests & CI
 
 ```bash
-cd frontend
-npm install
+PYTHONPATH=backend python backend/tests/test_unit.py     # pure functions — no services needed (runs in CI)
+PYTHONPATH=backend python backend/tests/test_api.py      # needs the backend on :8000
+PYTHONPATH=backend python backend/tests/test_booking.py  # needs PostgreSQL (book/reschedule/cancel/lookup)
 ```
 
-### h. Run the frontend
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the frontend type-check and the
+backend unit tests on every push.
 
-```bash
-npm run dev
-```
+---
 
-Serves on **http://localhost:3001** (port 3000 is reserved for Docker — see note below).
-
-| URL                              | Role                                          |
-|----------------------------------|-----------------------------------------------|
-| http://localhost:3001            | **Caller** — join the call, talk to Alex      |
-| http://localhost:3001/monitor    | **Watcher** — live transcript + take-over     |
-| http://localhost:3001/calls      | **Call History** — past calls + summaries     |
-| http://localhost:3001/bookings   | **Bookings** — all appointments               |
-
-> **Port note:** local dev uses **3001** because `docker-compose` maps the frontend to
-> host port **3000**. If you run via compose instead, use **http://localhost:3000**.
-
-## How each flow works
-
-### a. Booking conversation
-
-1. Caller joins the LiveKit room from `/`; the agent greets them.
-2. Audio flows **VAD (Silero) → STT (Deepgram) → LLM (Claude Haiku 4.5) → TTS (Deepgram)**.
-3. The LLM collects the five required fields one at a time: name, reason, date,
-   time slot, phone.
-4. The LLM calls **`check_availability(date, time_slot)`** — a tool that queries the
-   `appointments` table for conflicts and returns alternatives if the slot is taken.
-5. On confirmation, the LLM calls **`book_appointment(...)`**, which inserts the row and
-   returns a confirmation number (`APT-XXXXXXXX`).
-6. The agent reads the confirmation back to the caller.
-
-The agent can also manage existing appointments: **`lookup_appointment(phone)`** reads
-back a caller's upcoming bookings, **`reschedule_appointment(confirmation_number, new_date,
-new_time)`** moves one (re-checking the new slot is free), and
-**`cancel_appointment(confirmation_number)`** cancels one (idempotent).
-
-### b. Live monitoring + take-over
-
-1. Each call uses a **unique room** (`main-room-<timestamp>`) so every call is its own
-   session. The watcher opens `/monitor` and clicks **Start Monitoring**; it finds the
-   most recent **active** call via `GET /api/calls` and joins that room as a
-   subscribe-only participant (no audio publish — enforced by the token grants in
-   `main.py`). Start the call first, then monitor.
-2. The agent publishes typed events on the LiveKit data channel (topic `agent-monitor`):
-   `transcript`, `agent_state`, `intent`, `booking_update`, `call_status`,
-   `transfer_status`, and `turn_metrics` (per-turn STT/LLM/TTS latency). The dashboard
-   renders each in real time, including a live latency panel.
-3. **Take Over** → the dashboard sends `{ "type": "TAKEOVER_REQUEST" }` on the data
-   channel. The agent's `data_received` handler sets `_paused = True`, interrupts its
-   current speech, and stops responding to STT input. Status flips to *Watcher in
-   control*.
-4. The watcher now speaks to the caller directly over WebRTC audio.
-5. **Release Control** → sends `{ "type": "TAKEOVER_END" }`; the agent resumes.
-
-### c. Warm transfer
-
-1. Caller says something like *"I want to talk to a person about my bill."*
-2. The LLM detects the intent and calls **`request_human_transfer(reason, caller_name)`**,
-   and the agent publishes `transfer_status: initiated`.
-3. `services/transfer.py:initiate_transfer()` picks a path:
-
-   **Preferred — real audio bridge (LiveKit SIP).** If `LIVEKIT_SIP_TRUNK_ID` is set,
-   `dial_human_into_room()` creates a SIP participant on the outbound trunk that dials the
-   human's phone **into the same LiveKit room** as the caller. On answer, the AI pauses
-   (`transfer_status: accepted`, `call_status: transferring`) and the human and caller talk
-   directly. If the human doesn't answer, the AI resumes and apologises.
-
-   **Fallback — Twilio REST + TwiML.** If no SIP trunk is configured, it dials via the
-   Twilio REST API and the human hears a spoken summary + **press 1 to accept / 2 to
-   decline** (`/api/twilio/transfer-answer` → `/api/twilio/transfer-keypress`). This rings
-   the human and plays the summary but does **not** bridge the WebRTC caller's audio.
-
-> Set up the SIP trunk with `backend/scripts/setup_sip_trunk.py` (writes
-> `LIVEKIT_SIP_TRUNK_ID`). See the "Twilio + warm transfer" section of CLAUDE.md for the
-> full setup and known gotchas (trial-account message, public webhook URL, etc.).
-
-## Environment variables
-
-| Variable                    | Description                                            | Where to get it                              |
-|-----------------------------|--------------------------------------------------------|----------------------------------------------|
-| `LIVEKIT_URL`               | LiveKit server WebSocket URL (`wss://…`)               | LiveKit Cloud → Project → Settings           |
-| `LIVEKIT_API_KEY`           | LiveKit API key                                        | LiveKit Cloud → Settings → API Keys          |
-| `LIVEKIT_API_SECRET`        | LiveKit API secret                                     | LiveKit Cloud → Settings → API Keys          |
-| `ANTHROPIC_API_KEY`         | **Claude key — preferred LLM** (reliable tool-calling, low latency) | https://console.anthropic.com/settings/keys |
-| `ANTHROPIC_MODEL`           | Claude model (default `claude-haiku-4-5`)              | —                                            |
-| `GROQ_API_KEY`              | Groq LLM key (fallback if `ANTHROPIC_API_KEY` unset)   | https://console.groq.com/keys                |
-| `OPENAI_API_KEY`            | OpenAI key (fallback if Groq unset)                    | https://platform.openai.com/api-keys         |
-| `LLM_MODEL`                 | Model name (default `llama-3.3-70b-versatile` — reliable tool-calling) | —                            |
-| `LLM_BASE_URL`              | OpenAI-compatible base URL (Groq's by default)         | —                                            |
-| `DEEPGRAM_API_KEY`          | Deepgram key for STT + TTS                             | https://console.deepgram.com → API Keys      |
-| `DEEPGRAM_STT_MODEL`        | STT model (default `nova-2`)                           | —                                            |
-| `DEEPGRAM_TTS_VOICE`        | TTS voice (default `aura-asteria-en`; aura-2 needs paid access) | —                                   |
-| `DATABASE_URL`              | Async Postgres DSN (`postgresql+asyncpg://…`)          | matches the `docker run` command above        |
-| `TWILIO_ACCOUNT_SID`        | Twilio account SID                                     | https://console.twilio.com                   |
-| `TWILIO_AUTH_TOKEN`         | Twilio auth token                                      | https://console.twilio.com                   |
-| `TWILIO_PHONE_NUMBER`       | Twilio number to dial **from** (E.164)                 | Twilio Console → Phone Numbers               |
-| `TWILIO_HUMAN_AGENT_NUMBER` | Human agent number to dial **to** (E.164)              | your own / agent's phone                     |
-| `LIVEKIT_SIP_TRUNK_ID`      | Outbound SIP trunk id (enables the real audio bridge)  | `backend/scripts/setup_sip_trunk.py`         |
-| `TWILIO_SIP_TERMINATION_URI`| Twilio Elastic SIP trunk termination URI               | Twilio Console → Elastic SIP Trunking        |
-| `TWILIO_SIP_USERNAME`       | SIP credential-list username                           | Twilio Console → SIP credentials             |
-| `TWILIO_SIP_PASSWORD`       | SIP credential-list password                           | Twilio Console → SIP credentials             |
-| `PUBLIC_BASE_URL`           | Public URL of the FastAPI app (for Twilio webhooks)    | ngrok URL in dev                             |
-| `APP_ENV`                   | `development` or `production`                          | —                                            |
-| `PORT`                      | FastAPI port (default `8000`)                          | —                                            |
-| `LOG_LEVEL`                 | `DEBUG` / `INFO` / `WARNING` / `ERROR`                 | —                                            |
-
-## Running tests
-
-```bash
-# Unit tests — pure functions (phone masking, confirmation parsing, TwiML). No services needed.
-PYTHONPATH=backend python backend/tests/test_unit.py
-
-# API tests — require the FastAPI backend running on :8000
-PYTHONPATH=backend python backend/tests/test_api.py
-
-# Booking tests — require PostgreSQL reachable (book / reschedule / cancel / lookup flow)
-PYTHONPATH=backend python backend/tests/test_booking.py
-```
-
-The unit tests run anywhere (used in CI); the API and booking tests are integration
-tests that need the backend and database up. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
-
-## Run everything with Docker Compose
-
-```bash
-cp .env.example .env   # fill in keys first
-docker compose up --build
-```
-
-This starts Postgres, the FastAPI backend (`:8000`), the agent worker, and the
-frontend (`:3000`) together. See [docker-compose.yml](docker-compose.yml).
-
-## Project layout
+## 📁 Project layout
 
 ```
 voice-agent/
 ├── backend/
-│   ├── agent.py          LiveKit agent worker (VoiceAgent + @function_tool methods)
-│   ├── main.py           FastAPI app (token, webhook, appointments, Twilio TwiML)
+│   ├── agent.py          LiveKit agent worker — VoiceAgent + @function_tool methods
+│   ├── main.py           FastAPI — token, webhook, appointments, calls, Twilio TwiML
 │   ├── config.py         Pydantic settings — all env vars
 │   ├── database/         async SQLAlchemy models + session
-│   ├── tools/            appointment tools (book / reschedule / cancel / lookup)
+│   ├── tools/            appointment tools (check/book/reschedule/cancel/lookup)
 │   ├── services/         monitoring (data channel) + transfer (SIP / Twilio)
 │   ├── scripts/          setup_sip_trunk.py, reset_room.py
 │   └── tests/            test_unit · test_api · test_booking
 ├── frontend/
 │   ├── app/page.tsx      caller call UI
 │   ├── app/monitor/      watcher dashboard (transcript, state, latency, take-over)
-│   ├── app/calls/        call history (past calls + summaries)
+│   ├── app/calls/        call history + summaries
 │   ├── app/bookings/     all appointments
 │   ├── app/components/   shared UI (NavBar)
 │   └── lib/livekit.ts    token + data-channel helpers
-├── docs/architecture.md
-├── .github/workflows/    ci.yml — frontend typecheck + backend unit tests
-├── docker-compose.yml
-├── .env.example
-└── CLAUDE.md
+├── docs/                 architecture.md · demo-walkthrough.md
+├── .github/workflows/    ci.yml
+├── docker-compose.yml · .env.example · CLAUDE.md
 ```
+
+---
+
+## 🧰 Tech stack
+
+**Real-time:** LiveKit Cloud (WebRTC rooms, Agents 1.6, SIP) · **LLM:** Anthropic Claude Haiku 4.5
+(Groq/OpenAI fallback) · **Speech:** Deepgram Nova-2 STT + Aura TTS · **Turn-taking:** Silero VAD +
+ONNX turn detector · **Telephony:** Twilio (Elastic SIP Trunk + REST) · **Backend:** Python,
+FastAPI, LiveKit Agents SDK, SQLAlchemy (async) · **DB:** PostgreSQL · **Frontend:** Next.js 14,
+React, Tailwind, `@livekit/components-react`.
