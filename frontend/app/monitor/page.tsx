@@ -180,12 +180,16 @@ function MonitorDashboard() {
   const handleTakeover = useCallback(() => {
     setTakeoverActive(true);
     void sendTakeover(TAKEOVER_REQUEST);
-  }, [sendTakeover]);
+    // Enable the watcher's mic so they speak to the caller directly.
+    void localParticipant.setMicrophoneEnabled(true);
+  }, [sendTakeover, localParticipant]);
 
   const handleRelease = useCallback(() => {
     setTakeoverActive(false);
     void sendTakeover(TAKEOVER_END);
-  }, [sendTakeover]);
+    // Mute the watcher again when handing control back to the agent.
+    void localParticipant.setMicrophoneEnabled(false);
+  }, [sendTakeover, localParticipant]);
 
   const status = STATUS_STYLES[callStatus] ?? STATUS_STYLES.connected;
   const stateStyle = STATE_STYLES[agentState] ?? STATE_STYLES.initializing;

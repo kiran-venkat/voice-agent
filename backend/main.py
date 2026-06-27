@@ -109,10 +109,13 @@ async def generate_token(body: TokenRequest) -> TokenResponse:
     grants = VideoGrants(
         room_join=True,
         room=body.room_name,
-        can_publish=is_caller,
+        # Both roles may publish the mic: the caller talks to the agent; the
+        # watcher stays muted until they Take Over, then enables the mic to
+        # speak to the caller directly (see monitor/page.tsx).
+        can_publish=True,
         can_publish_data=True,       # both roles can send data channel messages
         can_subscribe=True,
-        can_publish_sources=["microphone"] if is_caller else [],
+        can_publish_sources=["microphone"],
     )
 
     builder = (
