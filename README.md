@@ -7,6 +7,13 @@ conversation, streams the entire call to a live monitoring dashboard, lets a hum
 watcher silently take over mid-call, and warm-transfers to a real human agent via
 Twilio when the caller needs one.
 
+## 🎥 Demo
+
+**[Watch the demo on Loom →](https://www.loom.com/share/b890f6ed4b2244839359e0a9c529a123)**
+
+Covers: a booking conversation, the live monitoring dashboard updating in real time, a
+watcher taking over, the warm transfer (summary + accept/decline), and the post-call summary.
+
 ## What it does
 
 - **Books appointments by voice** — collects name, reason, date/time, and phone, checks
