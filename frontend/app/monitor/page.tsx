@@ -40,6 +40,16 @@ const INTENT_STYLES: Record<string, { bg: string; text: string; label: string }>
   general:  { bg: "bg-gray-100", text: "text-gray-600", label: "General" },
 };
 
+// Canonical booking fields, in the order the agent collects them. `key` matches
+// the field names published in booking_update events (see backend agent tools).
+const BOOKING_FIELDS: { key: string; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "reason", label: "Reason" },
+  { key: "date", label: "Date" },
+  { key: "time_slot", label: "Time" },
+  { key: "phone", label: "Phone" },
+];
+
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border p-4">
@@ -67,6 +77,7 @@ function MonitorDashboard() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const latencySamples = useRef<Record<string, number[]>>({});
+  const prevCallStatus = useRef("connected");
   const { localParticipant } = useLocalParticipant();
 
   // Rolling average (last 50 samples) for a given latency metric, or null.
@@ -108,6 +119,13 @@ function MonitorDashboard() {
         break;
       case "call_status": {
         const status = event.data.status as string;
+        // A new call starting (previous call had ended) → reset booking panel.
+        if (status === "connected" && prevCallStatus.current === "ended") {
+          setCollected({});
+          setSummary(null);
+          setTranscript([]);
+        }
+        prevCallStatus.current = status;
         setCallStatus(status);
         setTakeoverActive(status === "takeover_active");
         if (status === "ended") {
@@ -231,19 +249,45 @@ function MonitorDashboard() {
           )}
         </Stat>
 
-        <Stat label="Collected Data">
-          {Object.keys(collected).length === 0 ? (
-            <p className="text-sm text-gray-400">Nothing collected yet</p>
-          ) : (
-            <dl className="flex flex-col gap-1.5">
-              {Object.entries(collected).map(([field, value]) => (
-                <div key={field} className="flex justify-between gap-2 text-sm">
-                  <dt className="text-gray-400 capitalize">{field}</dt>
-                  <dd className="text-gray-800 font-medium text-right">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+        <Stat label="Collecting Info">
+          <dl className="flex flex-col gap-2">
+            {(() => {
+              // First not-yet-collected field is the one the agent is asking for.
+              const active = callStatus !== "ended";
+              const collectingKey = active
+                ? BOOKING_FIELDS.find((f) => !collected[f.key])?.key
+                : undefined;
+              return BOOKING_FIELDS.map(({ key, label }) => {
+                const value = collected[key];
+                const state = value
+                  ? "done"
+                  : key === collectingKey
+                  ? "collecting"
+                  : "waiting";
+                const icon =
+                  state === "done" ? "✅" : state === "collecting" ? "⏳" : "⬜";
+                const text =
+                  state === "done"
+                    ? value
+                    : state === "collecting"
+                    ? "collecting…"
+                    : "waiting…";
+                const textClass =
+                  state === "done"
+                    ? "text-gray-800 font-medium"
+                    : state === "collecting"
+                    ? "text-amber-600"
+                    : "text-gray-400";
+                return (
+                  <div key={key} className="flex items-center gap-2 text-sm">
+                    <span className="w-5 shrink-0 text-center">{icon}</span>
+                    <dt className="w-16 shrink-0 text-gray-400">{label}</dt>
+                    <dd className={`flex-1 text-right truncate ${textClass}`}>{text}</dd>
+                  </div>
+                );
+              });
+            })()}
+          </dl>
         </Stat>
       </div>
 
