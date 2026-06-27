@@ -180,15 +180,16 @@ function MonitorDashboard() {
   const handleTakeover = useCallback(() => {
     setTakeoverActive(true);
     void sendTakeover(TAKEOVER_REQUEST);
-    // Enable the watcher's mic so they speak to the caller directly.
-    void localParticipant.setMicrophoneEnabled(true);
+    // Mic take-over disabled for now (monitor tab is listen-only; enabling the
+    // watcher mic on one laptop caused audio feedback/confusion). To re-enable
+    // two-way take-over, uncomment the line below (and the one in handleRelease):
+    // void localParticipant.setMicrophoneEnabled(true);
   }, [sendTakeover, localParticipant]);
 
   const handleRelease = useCallback(() => {
     setTakeoverActive(false);
     void sendTakeover(TAKEOVER_END);
-    // Mute the watcher again when handing control back to the agent.
-    void localParticipant.setMicrophoneEnabled(false);
+    // void localParticipant.setMicrophoneEnabled(false);
   }, [sendTakeover, localParticipant]);
 
   const status = STATUS_STYLES[callStatus] ?? STATUS_STYLES.connected;
@@ -301,12 +302,12 @@ function MonitorDashboard() {
         <div className="bg-white rounded-xl border p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-800">
-              {takeoverActive ? "You are in control" : "Agent is handling the call"}
+              {takeoverActive ? "Agent paused" : "Agent is handling the call"}
             </p>
             <p className="text-xs text-gray-400">
               {takeoverActive
-                ? "The agent is paused. Speak to the caller directly."
-                : "Take over to pause the agent and speak to the caller yourself."}
+                ? "The agent is paused and won't respond until you release control."
+                : "Take over to pause the agent."}
             </p>
           </div>
           {takeoverActive ? (
