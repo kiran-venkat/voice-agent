@@ -1,0 +1,98 @@
+# Full-stack local orchestration: Postgres + FastAPI + LiveKit agent + Next.js.
+# All services read secrets from .env (copy .env.example → .env first).
+#
+#   docker compose up --build
+#
+# Service URLs once up:
+#   backend   → http://localhost:8000
+#   frontend  → http://localhost:3000
+#
+# Note: backend/agent override DATABASE_URL to use the `postgres` service host
+# (the .env value points at localhost, which is wrong inside the Docker network).
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: voice-agent-db
+    environment:
+      POSTGRES_USER: voice_agent
+      POSTGRES_PASSWORD: voice_agent_dev
+      POSTGRES_DB: voice_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voice_agent -d voice_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  backend:
+    image: python:3.11-slim
+    container_name: voice-agent-backend
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      # Override the .env localhost DSN to reach the postgres service by name
+      DATABASE_URL: postgresql+asyncpg://voice_agent:voice_agent_dev@postgres:5432/voice_agent
+      PYTHONPATH: /app/backend
+      PORT: "8000"
+    volumes:
+      - ./backend:/app/backend
+    command: >
+      sh -c "pip install --no-cache-dir -r backend/requirements.txt &&
+             python backend/main.py"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── LiveKit agent worker ─────────────────────────────────────────────────────
+  agent:
+    image: python:3.11-slim
+    container_name: voice-agent-worker
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://voice_agent:voice_agent_dev@postgres:5432/voice_agent
+      PYTHONPATH: /app/backend
+    volumes:
+      - ./backend:/app/backend
+    command: >
+      sh -c "pip install --no-cache-dir -r backend/requirements.txt &&
+             python backend/agent.py start"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  # ── Next.js frontend ──────────────────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: voice-agent-frontend
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      # Evaluated in the browser, so localhost points at the host's backend port
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install &&
+             npx next dev -p 3000 -H 0.0.0.0"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
