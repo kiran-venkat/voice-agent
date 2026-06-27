@@ -35,8 +35,11 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import deepgram, openai as lk_openai, silero
 from livekit.plugins.turn_detector.english import EnglishModel
 
+from sqlalchemy import select
+
 from config import settings
-from database.session import create_tables
+from database.models import CallSession
+from database.session import AsyncSessionLocal, create_tables
 from services.monitoring import (
     MONITOR_TOPIC,
     publish_agent_state,
@@ -57,10 +60,14 @@ from tools.appointment import (
 logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are Alex, a warm and professional voice receptionist.
+SYSTEM_PROMPT = """You are Alex, a warm, upbeat, and genuinely helpful voice receptionist.
 
-Your job is to help callers book appointments and, when needed, transfer them
-to a human agent.
+Your job is to help callers book, look up, reschedule, and cancel appointments,
+and to connect them to a human agent when they need extra help.
+
+## If the caller asks what you can do
+Tell them warmly that you can book a new appointment, look up an existing one,
+reschedule it, or cancel it — and connect them to a human if they'd like.
 
 ## What you collect for bookings
 1. Full name
@@ -85,15 +92,30 @@ to a human agent.
 ## When to transfer
 Transfer when the caller:
 - Mentions billing, payment, or refunds
-- Files a complaint or is visibly upset
+- Files a complaint, is visibly upset, rude, or repeatedly frustrated
 - Explicitly says "talk to a person", "human", "agent", or "representative"
 
-## Conversation style
-- Warm, concise, and clear — you are a voice interface, not a chat bot.
-- Never ask for more than one piece of information at a time.
-- Confirm each answer before moving to the next question.
+## Edge cases — handle gracefully
+- Past date requested: say "I'm sorry, I can only book future appointments,"
+  then ask for a day that's coming up.
+- Weekend requested: say "We're only available Monday to Friday," then offer
+  the nearest weekday.
+- Requested slot unavailable: apologize briefly and offer the next available
+  slot from check_availability's alternatives.
+- Caller gives only partial info: thank them, then ask for the next single
+  missing item — never list everything still needed at once.
+- Caller is rude or frustrated: stay calm and kind, don't argue, apologize for
+  the trouble, and offer to connect them to a human agent.
+
+## Conversation style & personality
+- You are Alex: warm, upbeat, and reassuring — a voice interface, not a chat bot.
+- Use natural, friendly acknowledgements: "Perfect!", "Got it!", "Great choice!".
+- Ask for only ONE piece of information at a time; confirm each answer before moving on.
+- If the caller offers several details at once, accept them and confirm them back.
 - If the caller is unsure of a date, offer "Would tomorrow work?" as a fallback.
 - Keep responses under 2 sentences unless reading back a confirmation.
+- When transferring, be apologetic and reassuring: "I'm sorry you've had trouble —
+  let me connect you to a human who can help. Please stay on the line."
 
 ## Constraints
 - Today's date is {today}.
@@ -190,7 +212,10 @@ class VoiceAgent(Agent):
             "status": "transfer_initiated",
             "reason": reason,
             "caller_name": caller_name,
-            "message": "I'm connecting you to a specialist now. Please hold for just a moment.",
+            "message": (
+                "I'm sorry you've had trouble — let me connect you to a human agent "
+                "who can help. Please stay on the line, this will just take a moment."
+            ),
         })
 
     @function_tool
@@ -227,8 +252,9 @@ class VoiceAgent(Agent):
         if self._room:
             await publish_call_status(self._room, "connected")
         await self.session.say(
-            "Hello! You've reached our scheduling office. I'm Alex, your virtual assistant. "
-            "How can I help you today?"
+            "Hi there, thanks for calling! I'm Alex, your scheduling assistant. "
+            "I can book a new appointment for you, or look up, reschedule, or cancel "
+            "an existing one. What can I do for you today?"
         )
 
     async def on_user_turn_completed(
@@ -557,6 +583,9 @@ async def _generate_summary(session: AgentSession, room: rtc.Room) -> None:
                 if chunk.delta and chunk.delta.content:
                     summary_text += chunk.delta.content
 
+        # Persist to the CallSession row so the Call History page can show it.
+        await _persist_call_summary(room.name, summary_text)
+
         await publish_event(room, "call_status", {
             "status": "ended",
             "summary": summary_text,
@@ -566,6 +595,32 @@ async def _generate_summary(session: AgentSession, room: rtc.Room) -> None:
     except Exception as exc:
         logger.error("Failed to generate post-call summary: %s", exc)
         await publish_call_status(room, "ended")
+
+
+async def _persist_call_summary(room_name: str, summary: str) -> None:
+    """Write the post-call summary (and ended state) to the CallSession row.
+
+    Upserts by room_name: the row is normally created by the LiveKit
+    room_started webhook, but we create it here too so the summary is never lost
+    if the webhook didn't fire. Failures are logged, never raised — persistence
+    must not break the call teardown.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(CallSession).where(CallSession.room_name == room_name)
+            )
+            call = result.scalars().first()
+            if call is None:
+                call = CallSession(room_name=room_name, status="ended")
+                db.add(call)
+            call.summary = summary
+            call.status = "ended"
+            call.ended_at = datetime.now(timezone.utc)
+            await db.commit()
+        logger.info("Call summary persisted for room %s", room_name)
+    except Exception as exc:
+        logger.error("Failed to persist call summary for %s: %s", room_name, exc)
 
 
 # ── Worker entrypoint ─────────────────────────────────────────────────────────

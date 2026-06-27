@@ -9,9 +9,11 @@ Twilio when the caller needs one.
 
 - **Books appointments by voice** — collects name, reason, date/time, and phone, checks
   availability, and confirms the booking via LLM tool calls (stored in PostgreSQL).
+- **Manages existing appointments** — look up by phone, reschedule, or cancel, all by voice.
 - **Streams the call live** — a Next.js dashboard shows the running transcript, the
-  agent's state (listening / thinking / speaking), the detected intent, and the action
-  it's currently taking — all in real time over the LiveKit data channel.
+  agent's state (listening / thinking / speaking), the detected intent, the action it's
+  taking, the booking data collected so far, and **per-turn pipeline latency**
+  (STT / LLM first-token / TTS first-byte) — all in real time over the LiveKit data channel.
 - **Lets a watcher take over** — one click pauses the agent and hands the conversation
   to the human watcher, who speaks to the caller directly; another click hands it back.
 - **Warm-transfers to a human** — when the caller asks for billing, complaints, or "a
@@ -29,13 +31,13 @@ Twilio when the caller needs one.
 │   ┌──────────┐   WebRTC audio   ┌──────────────────────────────────┐     │
 │   │  Caller  │◄────────────────►│   Voice Agent (Agent A) — Python  │     │
 │   │ (browser)│                  │   STT  Deepgram Nova-2            │     │
-│   └──────────┘                  │   LLM  Groq llama-3.3-70b        │     │
-│                                  │   TTS  Deepgram Aura-2           │     │
-│   ┌──────────┐  data channel    │   VAD  Silero                    │     │
+│   │  or SIP  │                  │   LLM  Groq llama-3.1-8b-instant │     │
+│   └──────────┘                  │   TTS  Deepgram Aura (asteria)   │     │
+│   ┌──────────┐  data channel    │   VAD  Silero + turn detector    │     │
 │   │ Watcher  │◄─────────────────│                                  │     │
 │   │(dashboard)│── TAKEOVER ────►│   tools: check_availability,     │     │
-│   └──────────┘                  │          book_appointment,       │     │
-│                                  │          request_human_transfer  │     │
+│   └──────────┘                  │   book/reschedule/cancel/lookup, │     │
+│                                  │   request_human_transfer         │     │
 │                                  └─────────────────┬────────────────┘     │
 └──────────────────────────────────────────────────│──────────────────────┘
                                                     │ tool calls / REST
@@ -167,6 +169,11 @@ Serves on **http://localhost:3001** (port 3000 is reserved for Docker — see no
 5. On confirmation, the LLM calls **`book_appointment(...)`**, which inserts the row and
    returns a confirmation number (`APT-XXXXXXXX`).
 6. The agent reads the confirmation back to the caller.
+
+The agent can also manage existing appointments: **`lookup_appointment(phone)`** reads
+back a caller's upcoming bookings, **`reschedule_appointment(confirmation_number, new_date,
+new_time)`** moves one (re-checking the new slot is free), and
+**`cancel_appointment(confirmation_number)`** cancels one (idempotent).
 
 ### b. Live monitoring + take-over
 
