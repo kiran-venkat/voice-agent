@@ -111,6 +111,14 @@ it depends on LiveKit Cloud's worker selection and would intermittently leave th
 caller stuck on "connecting" with no agent. Do not remove the `agent_name` or the
 token `RoomConfiguration` — they are a matched pair.
 
+### Per-call unique rooms + monitor discovery
+Each caller joins a **unique room** (`main-room-<timestamp>`, set in `app/page.tsx`)
+so every call is its own `call_sessions` row — the `/calls` history shows one row per
+call instead of all calls merging into a single hard-coded `main-room`. Because rooms
+are now per-call, the watcher dashboard can't hard-code the room: `/monitor` fetches
+`GET /api/calls`, finds the most recent **active** call, and joins that room. So the
+caller must be connected **before** the watcher clicks Start Monitoring.
+
 ### All DB queries are async (asyncpg)
 `database/session.py` uses `create_async_engine`. Every repository function is
 `async def`. No sync DB calls anywhere.

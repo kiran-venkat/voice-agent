@@ -18,11 +18,14 @@ Twilio when the caller needs one.
   (STT / LLM first-token / TTS first-byte) — all in real time over the LiveKit data channel.
 - **Lets a watcher take over** — one click pauses the agent and hands the conversation
   to the human watcher, who speaks to the caller directly; another click hands it back.
-- **Warm-transfers to a human** — when the caller asks for billing, complaints, or "a
-  person", the agent dials a real human agent — into the call over LiveKit SIP, or via a
-  Twilio summary + accept/decline fallback — then bridges them in or returns to the caller.
+- **Warm-transfers to a human** — when the caller asks for "a person" or wants to escalate
+  a complaint/billing dispute, the agent dials a real human agent — into the call over
+  LiveKit SIP, or via a Twilio summary + accept/decline fallback — then bridges them in or
+  returns to the caller. (A routine "billing" *visit reason* does not trigger a transfer.)
 - **Generates a post-call summary** — when the call ends, the LLM produces a concise
-  recap (purpose, outcome, bookings, open issues) shown on the dashboard.
+  recap (purpose, outcome, bookings, open issues), shown on the dashboard and persisted.
+- **Browse history & bookings** — a **Call History** page lists past calls with their
+  summaries, and a **Bookings** page lists every appointment; a top nav bar links all pages.
 
 ## Architecture
 
@@ -33,7 +36,7 @@ Twilio when the caller needs one.
 │   ┌──────────┐   WebRTC audio   ┌──────────────────────────────────┐     │
 │   │  Caller  │◄────────────────►│   Voice Agent (Agent A) — Python  │     │
 │   │ (browser)│                  │   STT  Deepgram Nova-2            │     │
-│   │  or SIP  │                  │   LLM  Groq llama-3.1-8b-instant │     │
+│   │  or SIP  │                  │   LLM  Groq llama-3.3-70b        │     │
 │   └──────────┘                  │   TTS  Deepgram Aura (asteria)   │     │
 │   ┌──────────┐  data channel    │   VAD  Silero + turn detector    │     │
 │   │ Watcher  │◄─────────────────│                                  │     │
@@ -58,7 +61,8 @@ Twilio when the caller needs one.
                           └────────────────────┘     └────────────────────┘
 
       ┌──────────────────────────────────────────────────────────────┐
-      │  Next.js Frontend  —  /  (caller)   ·   /monitor  (watcher)    │
+      │  Next.js Frontend — / (caller) · /monitor (watcher) ·          │
+      │                     /calls (history) · /bookings (appointments)│
       └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -154,6 +158,8 @@ Serves on **http://localhost:3001** (port 3000 is reserved for Docker — see no
 |----------------------------------|-----------------------------------------------|
 | http://localhost:3001            | **Caller** — join the call, talk to Alex      |
 | http://localhost:3001/monitor    | **Watcher** — live transcript + take-over     |
+| http://localhost:3001/calls      | **Call History** — past calls + summaries     |
+| http://localhost:3001/bookings   | **Bookings** — all appointments               |
 
 > **Port note:** local dev uses **3001** because `docker-compose` maps the frontend to
 > host port **3000**. If you run via compose instead, use **http://localhost:3000**.
@@ -179,8 +185,11 @@ new_time)`** moves one (re-checking the new slot is free), and
 
 ### b. Live monitoring + take-over
 
-1. The watcher opens `/monitor` and joins the **same room** as a subscribe-only
-   participant (no audio publish — enforced by the token grants in `main.py`).
+1. Each call uses a **unique room** (`main-room-<timestamp>`) so every call is its own
+   session. The watcher opens `/monitor` and clicks **Start Monitoring**; it finds the
+   most recent **active** call via `GET /api/calls` and joins that room as a
+   subscribe-only participant (no audio publish — enforced by the token grants in
+   `main.py`). Start the call first, then monitor.
 2. The agent publishes typed events on the LiveKit data channel (topic `agent-monitor`):
    `transcript`, `agent_state`, `intent`, `booking_update`, `call_status`,
    `transfer_status`, and `turn_metrics` (per-turn STT/LLM/TTS latency). The dashboard
@@ -223,7 +232,7 @@ new_time)`** moves one (re-checking the new slot is free), and
 | `LIVEKIT_API_SECRET`        | LiveKit API secret                                     | LiveKit Cloud → Settings → API Keys          |
 | `GROQ_API_KEY`              | Groq LLM key (primary — fastest free tier)             | https://console.groq.com/keys                |
 | `OPENAI_API_KEY`            | OpenAI key (fallback if Groq unset)                    | https://platform.openai.com/api-keys         |
-| `LLM_MODEL`                 | Model name (default `llama-3.1-8b-instant`)            | —                                            |
+| `LLM_MODEL`                 | Model name (default `llama-3.3-70b-versatile` — reliable tool-calling) | —                            |
 | `LLM_BASE_URL`              | OpenAI-compatible base URL (Groq's by default)         | —                                            |
 | `DEEPGRAM_API_KEY`          | Deepgram key for STT + TTS                             | https://console.deepgram.com → API Keys      |
 | `DEEPGRAM_STT_MODEL`        | STT model (default `nova-2`)                           | —                                            |
@@ -284,6 +293,8 @@ voice-agent/
 ├── frontend/
 │   ├── app/page.tsx      caller call UI
 │   ├── app/monitor/      watcher dashboard (transcript, state, latency, take-over)
+│   ├── app/calls/        call history (past calls + summaries)
+│   ├── app/bookings/     all appointments
 │   ├── app/components/   shared UI (NavBar)
 │   └── lib/livekit.ts    token + data-channel helpers
 ├── docs/architecture.md

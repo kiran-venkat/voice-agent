@@ -10,7 +10,7 @@
 │   │  Caller  │◄────────────────►│  Voice Agent (Agent A)           │    │
 │   │ (Browser │                  │  ┌─────────────────────────────┐ │    │
 │   │  or SIP) │                  │  │ STT: Deepgram Nova-2        │ │    │
-│   └──────────┘                  │  │ LLM: Groq llama-3.1-8b      │ │    │
+│   └──────────┘                  │  │ LLM: Groq llama-3.3-70b     │ │    │
 │                                  │  │ TTS: Deepgram Aura (asteria)│ │    │
 │   ┌──────────┐  data channel    │  │ VAD: Silero + turn detector │ │    │
 │   │  Monitor │◄─────────────────│  └─────────────────────────────┘ │    │
@@ -25,7 +25,7 @@
                           │  POST /api/token      (room tokens)  │
                           │  POST /api/webhook    (LiveKit hook)  │
                           │  GET  /api/appointments               │
-                          │  POST /api/calls/:room/takeover       │
+                          │  GET  /api/calls      (call history)  │
                           │                                       │
                           └──────────┬──────────────┬────────────┘
                                      │              │
@@ -70,6 +70,17 @@ TTSMetrics.ttfb, EOUMetrics.transcription_delay) — see `_wire_session_events` 
 Serves token endpoint for browser clients, handles LiveKit webhooks for
 call lifecycle events, and exposes REST API for the monitoring dashboard
 to query appointments and call sessions.
+
+Notes:
+- **Per-call rooms:** each caller joins a unique room (`main-room-<timestamp>`), so each
+  call is its own `call_sessions` row (the `/calls` page shows one row per call). The
+  caller token embeds a `RoomConfiguration` agent dispatch + a short `empty_timeout`.
+- **Webhooks** (`room_started`/`room_finished`) create/close the `call_sessions` row.
+  Post-call, the agent also persists the LLM summary to that row (`_persist_call_summary`),
+  so summaries survive even if the webhook didn't fire.
+- **Takeover is over the data channel** (`TAKEOVER_REQUEST`/`TAKEOVER_END`), not a REST
+  endpoint.
+- Frontend pages: `/` caller · `/monitor` watcher · `/calls` history · `/bookings` appts.
 
 ### Tool Calls (`backend/tools/appointment.py`)
 
