@@ -47,7 +47,8 @@ voice-agent/
 │   └── services/
 │       ├── monitoring.py ← publish_event() — room data channel helper
 │       └── transfer.py   ← Twilio outbound call + TwiML warm transfer
-├── frontend/             ← Next.js: app/page.tsx (caller), app/monitor (watcher), lib/livekit.ts
+├── frontend/             ← Next.js: app/page.tsx (caller), app/monitor (watcher),
+│                            app/calls (history), app/components/NavBar.tsx, lib/livekit.ts
 ├── docs/
 │   └── architecture.md
 ├── .env.example
