@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # LLM
     groq_api_key: str = ""
     openai_api_key: str = ""
-    llm_model: str = "llama-3.1-8b-instant"
+    llm_model: str = "llama-3.3-70b-versatile"
     llm_base_url: str = "https://api.groq.com/openai/v1"
 
     # Deepgram — this project's key only has aura-1 access (aura-2 → 403)

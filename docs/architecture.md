@@ -10,9 +10,9 @@
 │   │  Caller  │◄────────────────►│  Voice Agent (Agent A)           │    │
 │   │ (Browser │                  │  ┌─────────────────────────────┐ │    │
 │   │  or SIP) │                  │  │ STT: Deepgram Nova-2        │ │    │
-│   └──────────┘                  │  │ LLM: Groq llama-3.3-70b     │ │    │
-│                                  │  │ TTS: Deepgram Aura-2        │ │    │
-│   ┌──────────┐  data channel    │  │ VAD: Silero                 │ │    │
+│   └──────────┘                  │  │ LLM: Groq llama-3.1-8b      │ │    │
+│                                  │  │ TTS: Deepgram Aura (asteria)│ │    │
+│   ┌──────────┐  data channel    │  │ VAD: Silero + turn detector │ │    │
 │   │  Monitor │◄─────────────────│  └─────────────────────────────┘ │    │
 │   │ (watcher)│─ TAKEOVER_REQ ──►│                                  │    │
 │   └──────────┘                  └──────────────────────────────────┘    │
@@ -58,7 +58,12 @@ Agent state change → publish_event("agent_state") → Monitor UI
 User speech final → publish_event("transcript", role="user")
 Agent speech done → publish_event("transcript", role="agent")
 Tool called → publish_event("booking_update" / "transfer_status")
+Per-turn metrics → publish_event("turn_metrics", {stt_ms, llm_ttft_ms, tts_ttfb_ms, eou_ms})
 ```
+
+Latency metrics come from the SDK's `metrics_collected` event (LLMMetrics.ttft,
+TTSMetrics.ttfb, EOUMetrics.transcription_delay) — see `_wire_session_events` in
+`agent.py`. The dashboard merges the partial events into a live latency panel.
 
 ### FastAPI Backend (`backend/main.py`)
 
@@ -68,16 +73,26 @@ to query appointments and call sessions.
 
 ### Tool Calls (`backend/tools/appointment.py`)
 
-LLM calls three tools:
+LLM calls these tools (defined as `@function_tool` methods on `VoiceAgent`, so they
+also push `booking_update` events to the dashboard):
 
 1. **`check_availability(date, time_slot)`** — queries `appointments` table
    for conflicts. Returns available/booked + nearest alternatives.
 
 2. **`book_appointment(name, reason, date, time_slot, phone)`** — inserts row
-   into `appointments`. Returns confirmation number.
+   into `appointments`. Returns confirmation number (`APT-XXXXXXXX`).
 
-3. **`request_human_transfer(reason)`** — signals warm transfer. Calls
-   `services/transfer.py` which dials Twilio, plays summary, bridges call.
+3. **`lookup_appointment(phone)`** — returns the caller's upcoming, non-cancelled
+   appointments, soonest first.
+
+4. **`reschedule_appointment(confirmation_number, new_date, new_time)`** — moves an
+   appointment after verifying the new slot is free.
+
+5. **`cancel_appointment(confirmation_number)`** — marks an appointment cancelled
+   (idempotent).
+
+6. **`request_human_transfer(reason, caller_name)`** — signals warm transfer. Calls
+   `services/transfer.py` which dials the human (SIP into the room, or Twilio fallback).
 
 ### Monitoring (`backend/services/monitoring.py`)
 
@@ -86,12 +101,22 @@ event schema. All components import `publish_event(room, event_type, data)`.
 
 ### Warm Transfer (`backend/services/transfer.py`)
 
-1. `initiate_transfer(room_name, caller_summary, human_agent_number)` — calls
-   Twilio REST API to create an outbound call to the human agent.
-2. Twilio hits `/api/twilio/transfer-answer` TwiML webhook.
-3. TwiML plays summary, waits for key press (accept=1, decline=2).
-4. If accepted: bridges via Twilio conference or SIP to LiveKit room.
-5. If declined: Agent resumes conversation with caller.
+`initiate_transfer()` chooses a path based on configuration:
+
+**Preferred — LiveKit SIP audio bridge** (when `LIVEKIT_SIP_TRUNK_ID` is set):
+1. `dial_human_into_room()` calls `api.CreateSIPParticipant` on the outbound trunk,
+   dialing the human's phone **into the same LiveKit room** as the caller.
+2. `wait_until_answered=True` blocks until a real pickup (not ringing).
+3. On answer, the agent (via `participant_connected`) pauses the AI and the human and
+   caller talk directly. Publishes `transfer_status: accepted` / `call_status: transferring`.
+4. If the human never answers/declines, the AI resumes and apologises.
+
+**Fallback — Twilio REST + TwiML** (no SIP trunk configured):
+1. `_twilio_rest_transfer()` creates an outbound Twilio call to the human.
+2. Twilio hits `/api/twilio/transfer-answer` → TwiML speaks the summary + `Gather`.
+3. Press 1 → `/api/twilio/transfer-keypress` → conference TwiML; press 2 → decline.
+4. This rings the human and plays the summary but does **not** bridge the WebRTC
+   caller's audio (a Twilio conference can't reach a LiveKit participant).
 
 ## Data Flow: Appointment Booking
 

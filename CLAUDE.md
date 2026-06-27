@@ -308,10 +308,16 @@ human hangs up, the AI resumes (`handle_human_left`).
 
 ## Known issues & next steps
 
-- **Groq free tier = 12,000 TPM** on `llama-3.3-70b-versatile` → `APIConnectionError`
-  / 429 under load. Mitigated by using `llama-3.1-8b-instant` (lighter, faster, good
-  for voice latency). For heavier reasoning, trim the system prompt + truncate
-  history sent per turn, or upgrade the Groq tier.
+- **Model choice (tool-calling reliability vs rate limits):** use
+  **`llama-3.3-70b-versatile`** for the voice agent. `llama-3.1-8b-instant` is
+  fast but **unreliable at tool-calling** — it emits the call as literal text
+  (`<function=book_appointment>{…}`) instead of a real tool_call and then
+  **fabricates results** (e.g. a fake "ABC123" confirmation while nothing is
+  saved to the DB). It also mis-reasons about dates. The 70B model fixes this.
+  Trade-off: 70B has a **12,000 TPM** free-tier cap → `APIConnectionError`/429
+  under heavy back-to-back load (single real calls are usually fine). To reduce
+  429s: trim the system prompt, or upgrade the Groq tier. Most reliable option
+  is routing the agent's LLM through the llm-gateway to Claude.
 - **`top`-of-call latency:** logs show occasional `inference is slower than realtime`
   and `eou detection ran after ... flushed` — acceptable on free tiers; raise
   `min_delay` endpointing if STT finals lag.
