@@ -31,9 +31,7 @@ This isn't a "happy-path" prototype — it's engineered like a product, with the
 actually bite real voice agents already handled:
 
 - 🎯 **Reliable tool-calling, not hallucinated bookings.** The agent's bookings are *real* DB
-  writes via structured tool calls. We benchmarked Groq/Llama and caught it **faking** tool calls
-  (emitting `<function=…>` as text and inventing confirmation numbers while nothing persisted) —
-  so the LLM runs on **Claude Haiku 4.5**, which emits proper `tool_use` calls at low latency.
+  writes via structured tool calls.
 - 🗣️ **Natural turn-taking.** Silero VAD (acoustic) is paired with an **ONNX semantic
   end-of-turn model** (`livekit-plugins-turn-detector`) so Alex doesn't cut you off mid-thought
   when you pause.
