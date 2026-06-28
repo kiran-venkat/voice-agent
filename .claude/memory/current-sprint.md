@@ -41,12 +41,3 @@ monitoring dashboard, watcher takeover, Twilio warm transfer, post-call summary.
 - Deepgram key has **aura-1 only** — use `aura-asteria-en` (aura-2 → 403)
 - Twilio `PUBLIC_BASE_URL` must be a live ngrok URL; agent reads it at startup
   (restart agent after changing). Trial accounts play a mandatory message.
-
-## Known gaps / next steps
-- 🔴 Repo not yet under git; `.env` holds real keys — `.gitignore` now added,
-  init the repo before pushing (see README / commands provided).
-- SIP audio bridge: verify human's phone audio actually enters the LiveKit room.
-- `.env.example` still missing the 4 new SIP vars (LIVEKIT_SIP_TRUNK_ID,
-  TWILIO_SIP_TERMINATION_URI/USERNAME/PASSWORD).
-- No automated tests yet.
-- OpenAI fallback is theoretical (OPENAI_API_KEY is a placeholder).
